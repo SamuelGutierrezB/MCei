@@ -10,6 +10,7 @@ import {
   StyleSheet,
   View,
 } from "react-native";
+import { notificationService } from "@/services/notificationService";
 
 interface ESP32Data {
   sensores?: {
@@ -88,6 +89,26 @@ export default function HomeScreen() {
       changed.add("altitud");
     }
 
+    // Detectar cambios en actuadores y enviar notificaciones
+    if (newData.actuadores?.bomba !== prev.actuadores?.bomba) {
+      notificationService.sendActuadorNotification(
+        "Bomba",
+        newData.actuadores?.bomba ?? false
+      );
+    }
+    if (newData.actuadores?.ventilador !== prev.actuadores?.ventilador) {
+      notificationService.sendActuadorNotification(
+        "Ventilador",
+        newData.actuadores?.ventilador ?? false
+      );
+    }
+    if (newData.actuadores?.luz !== prev.actuadores?.luz) {
+      notificationService.sendActuadorNotification(
+        "Luz",
+        newData.actuadores?.luz ?? false
+      );
+    }
+
     if (changed.size > 0) {
       setChangedValues(changed);
 
@@ -124,6 +145,9 @@ export default function HomeScreen() {
   };
 
   useEffect(() => {
+    // Solicitar permisos de notificación al cargar el componente
+    notificationService.requestPermissions();
+
     // Referencia a los datos principales del invernadero
     const datosRef = ref(database, "invernadero/datos");
     const lecturaRef = ref(database, "invernadero/ultima_lectura");
@@ -194,7 +218,7 @@ export default function HomeScreen() {
             </ThemedText>
           </View>
           {/* Timestamp */}
-          {data.timestamp_millis && (
+          {data && data.timestamp_millis && (
             <ThemedView style={styles.infoContainer}>
               <ThemedText style={styles.infoText}>
                 Última actualización:{" "}
