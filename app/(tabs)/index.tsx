@@ -2,8 +2,14 @@ import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { database } from "@/config/firebase";
 import { onValue, ref } from "firebase/database";
-import { useEffect, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Animated,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 
 interface ESP32Data {
   sensores?: {
@@ -45,6 +51,78 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
 
+  // Estados para el efecto de parpadeo
+  const [changedValues, setChangedValues] = useState<Set<string>>(new Set());
+  const previousData = useRef<ESP32Data | null>(null);
+  const blinkAnimation = useRef(new Animated.Value(1)).current;
+
+  // Función para detectar cambios en los valores
+  const detectChanges = (newData: ESP32Data) => {
+    if (!previousData.current) {
+      previousData.current = newData;
+      return;
+    }
+
+    const changed = new Set<string>();
+    const prev = previousData.current;
+
+    // Comparar valores de sensores
+    if (newData.sensores?.temperatura !== prev.sensores?.temperatura) {
+      changed.add("temperatura");
+    }
+    if (newData.sensores?.humedad !== prev.sensores?.humedad) {
+      changed.add("humedad");
+    }
+    if (newData.sensores?.luz !== prev.sensores?.luz) {
+      changed.add("luz");
+    }
+    if (newData.sensores?.presion !== prev.sensores?.presion) {
+      changed.add("presion");
+    }
+    if (
+      newData.sensores?.sensacion_termica !== prev.sensores?.sensacion_termica
+    ) {
+      changed.add("sensacion_termica");
+    }
+    if (newData.sensores?.altitud !== prev.sensores?.altitud) {
+      changed.add("altitud");
+    }
+
+    if (changed.size > 0) {
+      setChangedValues(changed);
+
+      // Iniciar animación de parpadeo
+      blinkAnimation.setValue(1);
+      Animated.sequence([
+        Animated.timing(blinkAnimation, {
+          toValue: 0.3,
+          duration: 200,
+          useNativeDriver: false,
+        }),
+        Animated.timing(blinkAnimation, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: false,
+        }),
+        Animated.timing(blinkAnimation, {
+          toValue: 0.3,
+          duration: 200,
+          useNativeDriver: false,
+        }),
+        Animated.timing(blinkAnimation, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: false,
+        }),
+      ]).start(() => {
+        // Limpiar los cambios después de la animación
+        setTimeout(() => setChangedValues(new Set()), 500);
+      });
+    }
+
+    previousData.current = newData;
+  };
+
   useEffect(() => {
     // Referencia a los datos principales del invernadero
     const datosRef = ref(database, "invernadero/datos");
@@ -56,7 +134,9 @@ export default function HomeScreen() {
       (snapshot) => {
         setLoading(false);
         if (snapshot.exists()) {
-          setData(snapshot.val());
+          const newData = snapshot.val();
+          detectChanges(newData);
+          setData(newData);
           setConnected(true);
         } else {
           setConnected(false);
@@ -113,6 +193,15 @@ export default function HomeScreen() {
               {connected ? "● Conectado" : "● Desconectado"}
             </ThemedText>
           </View>
+          {/* Timestamp */}
+          {data.timestamp_millis && (
+            <ThemedView style={styles.infoContainer}>
+              <ThemedText style={styles.infoText}>
+                Última actualización:{" "}
+                {new Date(data.timestamp_millis).toLocaleString()}
+              </ThemedText>
+            </ThemedView>
+          )}
         </ThemedView>
 
         {connected && data ? (
@@ -123,7 +212,15 @@ export default function HomeScreen() {
                 Sensores Ambientales
               </ThemedText>
               <ThemedView style={styles.cardContainer}>
-                <ThemedView style={[styles.card, styles.cardTemperature]}>
+                <Animated.View
+                  style={[
+                    styles.card,
+                    styles.cardTemperature,
+                    changedValues.has("temperatura") && {
+                      opacity: blinkAnimation,
+                    },
+                  ]}
+                >
                   <ThemedText style={styles.cardIcon}>🌡️</ThemedText>
                   <ThemedText type="subtitle" style={styles.cardTitle}>
                     Temperatura
@@ -131,9 +228,15 @@ export default function HomeScreen() {
                   <ThemedText style={styles.cardValue}>
                     {data.sensores?.temperatura?.toFixed(1) ?? "--"}°C
                   </ThemedText>
-                </ThemedView>
+                </Animated.View>
 
-                <ThemedView style={[styles.card, styles.cardHumidity]}>
+                <Animated.View
+                  style={[
+                    styles.card,
+                    styles.cardHumidity,
+                    changedValues.has("humedad") && { opacity: blinkAnimation },
+                  ]}
+                >
                   <ThemedText style={styles.cardIcon}>💧</ThemedText>
                   <ThemedText type="subtitle" style={styles.cardTitle}>
                     Humedad
@@ -141,9 +244,15 @@ export default function HomeScreen() {
                   <ThemedText style={styles.cardValue}>
                     {data.sensores?.humedad?.toFixed(1) ?? "--"}%
                   </ThemedText>
-                </ThemedView>
+                </Animated.View>
 
-                <ThemedView style={[styles.card, styles.cardLight]}>
+                <Animated.View
+                  style={[
+                    styles.card,
+                    styles.cardLight,
+                    changedValues.has("luz") && { opacity: blinkAnimation },
+                  ]}
+                >
                   <ThemedText style={styles.cardIcon}>☀️</ThemedText>
                   <ThemedText type="subtitle" style={styles.cardTitle}>
                     Luz
@@ -151,9 +260,15 @@ export default function HomeScreen() {
                   <ThemedText style={styles.cardValue}>
                     {data.sensores?.luz?.toFixed(0) ?? "--"} lx
                   </ThemedText>
-                </ThemedView>
+                </Animated.View>
 
-                <ThemedView style={[styles.card, styles.cardPressure]}>
+                <Animated.View
+                  style={[
+                    styles.card,
+                    styles.cardPressure,
+                    changedValues.has("presion") && { opacity: blinkAnimation },
+                  ]}
+                >
                   <ThemedText style={styles.cardIcon}>🌀</ThemedText>
                   <ThemedText type="subtitle" style={styles.cardTitle}>
                     Presión
@@ -161,9 +276,17 @@ export default function HomeScreen() {
                   <ThemedText style={styles.cardValue}>
                     {data.sensores?.presion?.toFixed(1) ?? "--"} hPa
                   </ThemedText>
-                </ThemedView>
+                </Animated.View>
 
-                <ThemedView style={[styles.card, styles.cardFeelsLike]}>
+                <Animated.View
+                  style={[
+                    styles.card,
+                    styles.cardFeelsLike,
+                    changedValues.has("sensacion_termica") && {
+                      opacity: blinkAnimation,
+                    },
+                  ]}
+                >
                   <ThemedText style={styles.cardIcon}>🌡️</ThemedText>
                   <ThemedText type="subtitle" style={styles.cardTitle}>
                     Sensación Térmica
@@ -171,9 +294,15 @@ export default function HomeScreen() {
                   <ThemedText style={styles.cardValue}>
                     {data.sensores?.sensacion_termica?.toFixed(1) ?? "--"}°C
                   </ThemedText>
-                </ThemedView>
+                </Animated.View>
 
-                <ThemedView style={[styles.card, styles.cardAltitude]}>
+                <Animated.View
+                  style={[
+                    styles.card,
+                    styles.cardAltitude,
+                    changedValues.has("altitud") && { opacity: blinkAnimation },
+                  ]}
+                >
                   <ThemedText style={styles.cardIcon}>⛰️</ThemedText>
                   <ThemedText type="subtitle" style={styles.cardTitle}>
                     Altitud
@@ -181,7 +310,7 @@ export default function HomeScreen() {
                   <ThemedText style={styles.cardValue}>
                     {data.sensores?.altitud?.toFixed(0) ?? "--"} m
                   </ThemedText>
-                </ThemedView>
+                </Animated.View>
               </ThemedView>
             </ThemedView>
 
@@ -272,16 +401,6 @@ export default function HomeScreen() {
                     </ThemedText>
                   </ThemedView>
                 </ThemedView>
-              </ThemedView>
-            )}
-
-            {/* Timestamp */}
-            {data.timestamp_millis && (
-              <ThemedView style={styles.infoContainer}>
-                <ThemedText style={styles.infoText}>
-                  Última actualización:{" "}
-                  {new Date(data.timestamp_millis).toLocaleString()}
-                </ThemedText>
               </ThemedView>
             )}
           </>
