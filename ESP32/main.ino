@@ -6,6 +6,7 @@ CODIGO MI WIFI
 #include <BH1750.h>
 #include <WiFi.h>
 #include <FirebaseESP32.h>
+#include <time.h>
 
 // Provide the token generation process info.
 #include <addons/TokenHelper.h>
@@ -62,6 +63,11 @@ FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
 
+// ========== CONFIGURACIÓN NTP ==========
+const char* ntpServer = "pool.ntp.org";
+const long gmtOffset_sec = -6 * 3600;  // UTC-6 (CST/CDT Mexico)
+const int daylightOffset_sec = 0;      // Sin ajuste horario de verano
+
 // ========== ESTRUCTURA PARA DATOS DE SENSORES ==========
 struct SensorData {
   float temperatura;
@@ -97,6 +103,9 @@ void setup() {
   
   // Conectar WiFi
   conectarWiFi();
+  
+  // Configurar tiempo NTP
+  configurarTiempo();
   
   // Configurar Firebase
   configurarFirebase();
@@ -150,6 +159,30 @@ void conectarWiFi() {
   } else {
     Serial.println();
     Serial.println("❌ Error conectando a WiFi");
+  }
+}
+
+void configurarTiempo() {
+  Serial.println("Configurando tiempo NTP...");
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  
+  // Esperar a que se sincronice el tiempo
+  struct tm timeinfo;
+  int intentos = 0;
+  while (!getLocalTime(&timeinfo) && intentos < 10) {
+    Serial.print(".");
+    delay(1000);
+    intentos++;
+  }
+  
+  if (getLocalTime(&timeinfo)) {
+    Serial.println();
+    Serial.println("✅ Tiempo sincronizado correctamente");
+    Serial.print("Fecha y hora actual: ");
+    Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+  } else {
+    Serial.println();
+    Serial.println("❌ Error sincronizando tiempo NTP");
   }
 }
 
@@ -315,8 +348,9 @@ void controlarActuadores() {
 void enviarDatosFirebase() {
   Serial.println("📡 Enviando datos a Firebase...");
   
-  // Obtener timestamp
-  currentData.timestamp = String(millis());
+  // Obtener timestamp Unix real
+  unsigned long timestampUnix = obtenerTimestampUnix();
+  String fechaHora = obtenerFechaHora();
   
   // Crear objeto JSON con los datos
   FirebaseJson json;
@@ -347,9 +381,16 @@ void enviarDatosFirebase() {
   json.set("umbrales/temperatura", temperatureThreshold);
   json.set("umbrales/luz", lightThreshold);
   
-  // Agregar timestamp
-  json.set("timestamp", currentData.timestamp);
-  json.set("timestamp_millis", millis());
+  // Agregar timestamp Unix real y fecha legible
+  json.set("timestamp", String(timestampUnix));
+  json.set("timestamp_millis", timestampUnix * 1000ULL);
+  json.set("fecha_hora", fechaHora);
+  
+  // Debug: mostrar timestamp
+  Serial.print("Timestamp Unix: ");
+  Serial.println(timestampUnix);
+  Serial.print("Fecha/Hora: ");
+  Serial.println(fechaHora);
   
   // Enviar datos a Firebase
   String path = "/invernadero/datos";
@@ -486,4 +527,27 @@ void mostrarEstadoActual() {
   Serial.println("🌬️  VENTILADOR: " + String(ventiladorState ? "ON" : "OFF"));
   Serial.println("💡 LUZ:     " + String(luzState ? "ON" : "OFF"));
   Serial.println("====================");
+}
+
+unsigned long obtenerTimestampUnix() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    Serial.println("❌ Error obteniendo tiempo local");
+    return 0;
+  }
+  
+  time_t now;
+  time(&now);
+  return (unsigned long)now;
+}
+
+String obtenerFechaHora() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    return "Error tiempo";
+  }
+  
+  char buffer[64];
+  strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &timeinfo);
+  return String(buffer);
 }
